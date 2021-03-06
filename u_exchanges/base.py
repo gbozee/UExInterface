@@ -8,6 +8,28 @@ async def loop_helper(callback):
     return await future
 
 
+class AssetBalance(object):
+    borrowed: float
+    free: float
+    total: float
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} total: {self.total}>"
+
+
+class MarginAccount:
+    base_asset: str
+    quote_asset: str
+    symbol: str
+    base_asset_balance: AssetBalance
+    quote_asset_balance: AssetBalance
+    liquidation_price: float
+    margin_ratio: float
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} {self.symbol}>"
+
+
 class BaseExchange:
     def __init__(self, api_key: str, api_secret: str, **kwargs) -> None:
         self.api_key = api_key
@@ -22,3 +44,5 @@ class BaseExchange:
             lambda: getattr(client, function_name)(*args, **kwargs)
         )
 
+    async def get_margin_accounts(self) -> typing.List[MarginAccount]:
+        raise NotImplemented
