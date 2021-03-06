@@ -1,2 +1,3 @@
 https://github.com/gbozee/bitcoin-exchange-helper/archive/0.0.6.6.tar.gz
 https://github.com/gbozee/V3-Open-API-SDK/archive/0.0.0.1.tar.gz
+ccxt==1.42.61

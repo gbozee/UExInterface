@@ -1,33 +1,13 @@
 import asyncio
 import typing
+from .types import AssetBalance, MarginAccount, LoanInfo
+from .utils import logger
 
 
 async def loop_helper(callback):
     loop = asyncio.get_event_loop()
     future = loop.run_in_executor(None, callback)
     return await future
-
-
-class AssetBalance(object):
-    borrowed: float
-    free: float
-    total: float
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} total: {self.total}>"
-
-
-class MarginAccount:
-    base_asset: str
-    quote_asset: str
-    symbol: str
-    base_asset_balance: AssetBalance
-    quote_asset_balance: AssetBalance
-    liquidation_price: float
-    margin_ratio: float
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} {self.symbol}>"
 
 
 class BaseExchange:
@@ -44,5 +24,35 @@ class BaseExchange:
             lambda: getattr(client, function_name)(*args, **kwargs)
         )
 
-    async def get_margin_accounts(self) -> typing.List[MarginAccount]:
+    async def get_margin_accounts(self, symbol=None) -> typing.List[MarginAccount]:
+        raise NotImplemented
+
+    async def get_loanable_amount(self, symbol: str) -> typing.List[LoanInfo]:
+        raise NotImplemented
+
+    async def borrow_loan(self, asset: str, symbol: str, amount: float) -> bool:
+        raise NotImplemented
+
+    async def repay_loan(self, asset: str, symbol: str, amount: float) -> bool:
+        raise NotImplemented
+
+    async def create_single_order(self, symbol: str, side: str, quantity: float = None, price: float = None, notional: float = None, **kwargs):
+        raise NotImplemented
+
+    async def bulk_create_orders(self, symbol: str, orders: typing.List[typing.Any]):
+        raise NotImplemented
+
+    async def cancel_single_order(self, symbol: str, order_id):
+        raise NotImplemented
+
+    async def bulk_cancel_orders(self, symbol: str, order_ids: typing.List[typing.Any]):
+        raise NotImplemented
+
+    async def cancel_open_orders(self, symbol: str):
+        raise NotImplemented
+
+    async def get_open_orders(self, symbol: str):
+        raise NotImplemented
+
+    async def get_closed_orders(self, symbol: str):
         raise NotImplemented
