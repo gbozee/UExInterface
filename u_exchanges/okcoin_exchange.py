@@ -100,6 +100,14 @@ class OkexBalanceType(types.BalanceType):
         self.locked = float(x['hold'])
 
 
+class OkexFutureBalanceType(types.BalanceType):
+    def __init__(self, x) -> None:
+        self.asset = x['currency']
+        self.balance = float(x['total_avail_balance'])
+        self.available = float(x['max_withdraw'])
+        self.locked = float(x['maint_margin_ratio'])
+
+
 class OkexFuturePosition(types.FuturePosition):
     def __init__(self, x) -> None:
         self.symbol = x['instrument_id']
@@ -257,6 +265,10 @@ class OKCoinExchange(BaseExchange):
     async def spot_market_order(self, symbol: str, amount: float, side: str):
         self.client.spot_api.take_order(symbol, side, type='market', size=amount, notional=amount)
 
+    async def get_margin_account_balance(self, symbol: str):
+        result = await self.get_margin_accounts(symbol)
+        return result.balance
+
 
 def process_places(exchange_info, symbol: str):
     result = [x for x in exchange_info if x['instrument_id'].lower() == symbol.lower()]
@@ -344,3 +356,19 @@ class OkexExchange(OKCoinExchange):
             new_result, cursor = self.client.swap_api.get_order_list(symbol, '0', **cursor)
             result.extend(new_result['order_info'])
         return result
+
+    async def get_futures_account_balance(self, symbol: str):
+        result = self.client.swap_api.get_coin_account(symbol)
+        return OkexFutureBalanceType(result['info'])
+
+    async def transfer_from_spot_to_future(self, asset: str, amount: float, symbol: str):
+        return self.client.account_api.coin_transfer(asset, amount, '1', '9', instrument_id=symbol)
+
+    async def transfer_from_margin_to_future(self, asset: str, amount: float, margin_symbol: str, future_symbol: str):
+        return self.client.account_api.coin_transfer(asset, amount, '5', '9', instrument_id=margin_symbol, to_instrument_id=future_symbol)
+
+    async def transfer_from_future_to_margin(self, asset: str, amount: float, margin_symbol: str, future_symbol):
+        return self.client.account_api.coin_transfer(asset, amount, '9', '5', instrument_id=future_symbol, to_instrument_id=margin_symbol)
+
+    async def transfer_funds_to_future_account(self, asset: str, amount: float, symbol: str):
+        return self.client.account_api.coin_transfer(asset, amount, '6', '9', instrument_id=symbol)

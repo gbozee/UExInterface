@@ -93,6 +93,18 @@ class BaseExchange:
     async def get_spot_account_balance(self, asset: str = None):
         raise NotImplemented
 
+    async def get_futures_account_balance(self, symbol: str = None):
+        raise NotImplemented
+
+    async def get_margin_account_balance(self, asset: str = None, symbol: str = None):
+        raise NotImplemented
+
+    async def transfer_from_spot_to_future(self, asset: str, amount: float, symbol: str):
+        raise NotImplemented
+
+    async def transfer_funds_to_future_account(self, asset: str, amount: float, symbol: str):
+        raise NotImplemented
+
     async def spot_market_order(self, symbol: str, amount: float, side: str):
         raise NotImplemented
 
