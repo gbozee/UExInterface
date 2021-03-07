@@ -25,10 +25,29 @@ class LoanInfo:
     asset: str
     rate: float
     available: float
+    locked: float
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self.asset} {self.available} {self.rate}>"
 
 
-class OrderType:
-    pass
+class BalanceType:
+    balance: float
+    available: float
+    asset: str
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} {self.asset} {self.balance}>"
+
+
+class FuturePosition:
+    symbol: str
+    size: float
+    entry: float
+    pnl: float
+    liquidation_price: float
+    leverage: float
+    margin_type: str
+    kind: str
+    mark_price: float
+    future_type: str

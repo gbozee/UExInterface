@@ -27,6 +27,12 @@ class OkCoinClient:
             self.api_key, self.api_secret, self.passphrase, False
         )
 
+    def bulk_take_orders(self, params):
+        return self.margin_api.take_orders(params)
+
+    def bulk_revoke_orders(self, params):
+        return self.margin_api.revoke_orders(params)
+
 
 class OkexClient(OkCoinClient):
     def __init__(self, api_key: str, api_secret: str, passphrase: str, is_debug=False):
@@ -40,11 +46,11 @@ class OkexClient(OkCoinClient):
         self.information_api = information_api.InformationAPI(self.api_key, self.api_secret, self.passphrase, False)
         self.index_api = index_api.IndexAPI(self.api_key, self.api_secret, self.passphrase, False)
 
-    def bulk_take_orders(self, params):
-        return self.margin_api.take_orders(params)
+    def bulk_future_take_orders(self, instrument_id, params):
+        return self.swap_api.take_orders(instrument_id, params)
 
-    def bulk_revoke_orders(self, params):
-        return self.margin_api.revoke_orders(params)
+    def bulk_future_revoke_orders(self, instrument_id, params):
+        return self.swap_api.revoke_orders(instrument_id, params)
 
 
 class OkexAssetBalance(types.AssetBalance):
@@ -76,6 +82,7 @@ class OkexMarginAccount(types.MarginAccount):
         self.quote_asset_balance = OkexAssetBalance(result['quote_data'])
         self.liquidation_price = float(x['liquidation_price'])
         self.margin_ratio = float(x['margin_ratio'] or '0')
+        self.balance = {self.quote_asset: self.quote_asset_balance, self.base_asset: self.base_asset_balance}
 
 
 class OkexLoanInfo(types.LoanInfo):
@@ -83,6 +90,29 @@ class OkexLoanInfo(types.LoanInfo):
         self.asset = asset
         self.rate = float(data['rate'])
         self.available = float(data['available'])
+
+
+class OkexBalanceType(types.BalanceType):
+    def __init__(self, x) -> None:
+        self.asset = x['currency']
+        self.balance = float(x['balance'])
+        self.available = float(x['available'])
+        self.locked = float(x['hold'])
+
+
+class OkexFuturePosition(types.FuturePosition):
+    def __init__(self, x) -> None:
+        self.symbol = x['instrument_id']
+        coin_type = len(self.symbol.lower().split("_usd_")) > 1
+        self.future_type = 'coin' if coin_type else 'usdt'
+        self.size = float(x['avail_position'])
+        self.entry = float(x['avg_cost'])
+        self.pnl = float(x['unrealized_pnl'])
+        self.liquidation_price = float(x['liquidation_price'])
+        self.leverage = float(x['leverage'])
+        self.margin_type = 'cross'
+        self.kind = x['side']
+        self.mark_price = float(x['last'])
 
 
 class OKCoinExchange(BaseExchange):
@@ -108,7 +138,7 @@ class OKCoinExchange(BaseExchange):
                 self.minimum = result["minimum"] + (self.step_size * 2)
                 self.updated = True
 
-    async def get_margin_accounts(self, symbol: str = None) -> typing.List[types.MarginAccount]:
+    async def get_margin_accounts(self, symbol: str = None) -> typing.Union[typing.List[types.MarginAccount], types.MarginAccount]:
         if symbol:
             _account = self.client.margin_api.get_specific_account(symbol)
             return OkexMarginAccount(**{**_account, 'instrument_id': symbol})
@@ -124,7 +154,7 @@ class OKCoinExchange(BaseExchange):
         return []
 
     async def borrow_loan(self, asset: str, symbol: str, amount: float) -> bool:
-        result = self.client.margin_api.borrow_coin(symbol, asset, amount)
+        result = self.client.margin_api.borrow_coin(symbol, "", asset, amount)
         return result['result']
 
     async def repay_loan(self, asset: str, symbol: str, amount: float) -> bool:
@@ -136,7 +166,7 @@ class OKCoinExchange(BaseExchange):
         v = {
             'instrument_id': symbol,
             'price': float(self.price_places % price),
-            'size': float(self.decimal_places % quantity),
+            'size': float(self.decimal_places % quantity) if quantity else '',
             'margin_trading': '2',
             'side': side,
             'type': 'limit',
@@ -187,6 +217,45 @@ class OKCoinExchange(BaseExchange):
             result.extend(new_result)
         return result
 
+    async def transfer_funds_to_trading_account(self, asset: str, amount: float = None, symbol: str = None):
+        _amount = amount
+        if not _amount:
+            account = await self.get_funding_account_balance(asset)
+            _amount = account.available
+        return self.client.account_api.coin_transfer(asset, _amount, '6', '5', instrument_id=symbol)
+
+    async def transfer_funds_to_funding_account(self, asset: str, amount: float = None, symbol: str = None):
+        _amount = amount
+        if not _amount:
+            account = await self.get_margin_accounts(symbol)
+            _amount = account.balance[asset.upper()].free
+        return self.client.account_api.coin_transfer(asset, _amount, '5', '6', instrument_id=symbol)
+
+    async def get_funding_account_balance(self, asset: str = None):
+        if asset:
+            result = self.client.account_api.get_currency(asset)
+            return OkexBalanceType(result[0])
+        result = self.client.account_api.get_wallet()
+        return [OkexBalanceType(x) for x in result]
+
+    async def get_spot_account_balance(self, asset: str = None):
+        if asset:
+            result = self.client.spot_api.get_coin_account_info(asset)
+            return OkexBalanceType(result)
+        result = self.client.spot_api.get_account_info()
+        return [OkexBalanceType(x) for x in result]
+
+    async def transfer_funds_to_spot_account(self, asset: str, amount: float, symbol: str):
+        return self.client.account_api.coin_transfer(asset, amount, '6', '1', instrument_id=symbol)
+
+    async def transfer_from_spot_to_margin(self, asset: str, amount: float, symbol: str):
+        return self.client.account_api.coin_transfer(asset, amount, '1', '5', instrument_id=symbol)
+
+    async def transfer_from_margin_to_spot(self, asset: str, amount: float, symbol: str):
+        return self.client.account_api.coin_transfer(asset, amount, '5', '1', instrument_id=symbol)
+
+    async def spot_market_order(self, symbol: str, amount: float, side: str):
+        self.client.spot_api.take_order(symbol, side, type='market', size=amount, notional=amount)
 
 
 def process_places(exchange_info, symbol: str):
@@ -211,4 +280,67 @@ class OkexExchange(OKCoinExchange):
     def client(self) -> OkexClient:
         return OkexClient(api_key=self.api_key, api_secret=self.api_secret, passphrase=self.passphrase)
 
-    
+    async def get_futures_position(self, symbol: str = None) -> OkexFuturePosition:
+        # if symbol:
+        #     positions = self.client.futures_api.get_specific_position(symbol)
+        # else:
+        if symbol:
+            position = self.client.swap_api.get_specific_position(symbol)
+            positions = position['holding']
+        else:
+            position = self.client.swap_api.get_position()
+            positions = [x for y in position for x in y['holding']]
+        return [OkexFuturePosition(x) for x in positions]
+
+    async def get_future_contracts(self):
+        accounts = self.client.swap_api.get_accounts()
+        return [{'symbol': x['instrument_id'], 'underlying':x['underlying'], 'currency':x['currency']} for x in accounts['info']]
+
+    async def get_futures_leverage(self, symbol: str):
+        result = self.client.swap_api.get_settings(symbol)
+        return result
+
+    async def set_futures_leverage(self, symbol: str, value: float):
+        result = self.client.swap_api.set_leverage(symbol, value, '3')
+        return result
+
+    async def create_future_order(self, symbol: str, side: str, quantity: float, price: float, raw=False, **kwargs):
+        if kwargs['kind'].lower() == 'long':
+            type = "1" if side.lower() == 'buy' else '3'
+        else:
+            type = '2' if side.lower() == 'sell' else '4'
+        v = {
+            "price": price,
+            "size": quantity,
+            "type": type,
+        }
+        if raw:
+            return v
+        self.client.swap_api.take_order(symbol, type, price, quantity)
+
+    async def bulk_create_future_orders(self, symbol: str, orders: typing.List[typing.Any]):
+        _orders = await asyncio.gather(*[self.create_future_order(**{'raw': True, 'symbol': symbol, **x}) for x in orders])
+        batches = [x for x in utils.chunks(_orders, 10)]
+        result = await asyncio.gather(*[self.client_helper('bulk_future_take_orders', symbol, x) for x in batches])
+        return result
+
+    async def cancel_future_order(self, symbol: str, order_id):
+        self.client.swap_api.revoke_order(symbol, order_id=order_id)
+
+    async def bulk_cancel_future_orders(self, symbol: str, order_ids: typing.List[typing.Any]):
+        batches = [x for x in utils.chunks(order_ids, 10)]
+        result = await asyncio.gather(*[self.client_helper('bulk_future_revoke_orders', symbol, x) for x in batches])
+        return result
+
+    async def cancel_future_open_orders(self, symbol: str):
+        orders = await self.get_future_open_orders(symbol)
+        orders = [x['order_id'] for x in orders]
+        await self.bulk_cancel_future_orders(symbol, orders)
+
+    async def get_future_open_orders(self, symbol: str):
+        result, cursor = self.client.swap_api.get_order_list(symbol, '0')
+        result = result['order_info']
+        while cursor:
+            new_result, cursor = self.client.swap_api.get_order_list(symbol, '0', **cursor)
+            result.extend(new_result['order_info'])
+        return result
