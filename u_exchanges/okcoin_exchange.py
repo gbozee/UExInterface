@@ -372,3 +372,6 @@ class OkexExchange(OKCoinExchange):
 
     async def transfer_funds_to_future_account(self, asset: str, amount: float, symbol: str):
         return self.client.account_api.coin_transfer(asset, amount, '6', '9', instrument_id=symbol)
+
+    async def transfer_from_future_to_funding(self, asset: str, amount: float):
+        return self.client.account_api.coin_transfer(asset, amount, '9', '6')
