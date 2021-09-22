@@ -122,6 +122,14 @@ class OkexFuturePosition(types.FuturePosition):
         self.kind = x['side']
         self.mark_price = float(x['last'])
 
+class OkexV5Exchange(BaseException):
+    def __init__(self, **kwargs) -> None:
+        self.passphrase = kwargs.get("passphrase", None)
+        super().__init__(**kwargs)
+
+    @property
+    def client(self):
+        pass
 
 class OKCoinExchange(BaseExchange):
     def __init__(self, **kwargs) -> None:

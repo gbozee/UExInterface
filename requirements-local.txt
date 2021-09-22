@@ -1,2 +1,4 @@
 -r requirements.txt
-
+ipython==7.16.1
+jedi==0.17.2
+black==21.9b0
